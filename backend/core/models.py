@@ -58,8 +58,10 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
 
     @property
     def subtotal(self):
-        return self.product.price * self.quantity
-
+        if self.price_at_purchase is None:
+            return 0 
+        return self.price_at_purchase * self.quantity

@@ -87,10 +87,13 @@ class OrderSerializer(serializers.ModelSerializer):
                 product.stock = F('stock') - quantity
                 product.save(update_fields=['stock'])
                 # Create order item
-                OrderItem.objects.create(order=order, **item_data)
-
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    price_at_purchase=product.price  # ✅ capture price at time of order
+                )
         return order
-
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
@@ -100,6 +103,11 @@ class OrderSerializer(serializers.ModelSerializer):
         if items_data is not None:
             instance.items.all().delete()
             for item_data in items_data:
-                OrderItem.objects.create(order=instance, **item_data)
+                OrderItem.objects.create(
+                    order=instance,
+                    product=item_data['product'],
+                    quantity=item_data['quantity'],
+                    price_at_purchase=item_data['product'].price
+                )
 
         return instance
