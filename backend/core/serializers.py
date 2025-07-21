@@ -2,6 +2,9 @@ from django.contrib.auth import authenticate
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Product, Customer, Order, OrderItem
+from django.db import transaction
+from django.db.models import F
+
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -59,11 +62,35 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = ['id', 'customer', 'customer_name', 'status', 'created_at', 'total', 'items']
 
     def create(self, validated_data):
-        items_data = validated_data.pop('items')
-        order = Order.objects.create(**validated_data)
-        for item_data in items_data:
-            OrderItem.objects.create(order=order, **item_data)
+        items_data = validated_data.pop('items')  # Remove items from main data
+        with transaction.atomic():
+            order = Order.objects.create(**validated_data)
+
+            for item_data in items_data:
+                product = Product.objects.select_for_update().get(id=item_data['product'].id)
+
+                quantity = item_data['quantity']
+
+                # ✅ Check if product is active
+                if product.status.lower() != "active":
+                    raise serializers.ValidationError(
+                        f"Product '{product.name}' is inactive and cannot be ordered."
+                    )
+
+                # ✅ Check stock availability
+                if product.stock < quantity:
+                    raise serializers.ValidationError(
+                        f"Insufficient stock for '{product.name}'. Available: {product.stock}, requested: {quantity}."
+                    )
+
+                # ✅ Deduct stock atomically using F()
+                product.stock = F('stock') - quantity
+                product.save(update_fields=['stock'])
+                # Create order item
+                OrderItem.objects.create(order=order, **item_data)
+
         return order
+
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
